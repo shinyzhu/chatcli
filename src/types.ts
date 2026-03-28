@@ -47,8 +47,12 @@ export interface StdioMCPServerConfig {
 
 /** Configuration for a remote (HTTP/SSE) MCP server connection */
 export interface RemoteMCPServerConfig {
-  /** Transport type */
-  type: "sse";
+  /**
+   * Transport type.
+   * - "http": Streamable HTTP transport
+   * - "sse": legacy alias for compatibility
+   */
+  type: "http" | "sse";
   /** URL of the remote MCP server endpoint */
   url: string;
   /** Optional HTTP headers (e.g. for authentication) */

@@ -5,7 +5,7 @@ A CLI app that combines custom LLM, MCP (Model Context Protocol) and loadable Sk
 ## Features
 
 - **Custom LLM** — Connect to any OpenAI-compatible API endpoint (Ollama, LM Studio, vLLM, etc.)
-- **MCP Support** — Connect to MCP servers via stdio or remote HTTP/SSE and use their tools
+- **MCP Support** — Connect to MCP servers via stdio or remote HTTP and use their tools
 - **Skills** — Load custom skill modules from a directory (TypeScript, JavaScript, or Markdown)
 - **Streaming** — Responses stream in real-time from the LLM
 - **Interactive CLI** — Chat with your LLM using slash commands
@@ -50,8 +50,8 @@ chatcli can be configured via a JSON config file or environment variables. Envir
       "args": ["-y", "@modelcontextprotocol/server-everything"]
     },
     "remote-server": {
-      "type": "sse",
-      "url": "https://mcp.example.com/sse",
+      "type": "http",
+      "url": "https://mcp.example.com/mcp",
       "headers": {
         "Authorization": "Bearer your-api-key"
       }
@@ -72,7 +72,19 @@ chatcli can be configured via a JSON config file or environment variables. Envir
 }
 ```
 
-**SSE (remote)** — connects to a remote MCP server via HTTP/SSE:
+**HTTP (remote)** — connects to a remote MCP server using Streamable HTTP:
+
+```json
+{
+  "type": "http",
+  "url": "https://mcp.example.com/mcp",
+  "headers": {
+    "Authorization": "Bearer your-api-key"
+  }
+}
+```
+
+**SSE (legacy alias)** — `"type": "sse"` remains supported for compatibility:
 
 ```json
 {

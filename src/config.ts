@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { resolve } from "path";
+import { dirname, isAbsolute, resolve } from "path";
 import type { AppConfig } from "./types.ts";
 
 const DEFAULT_CONFIG_PATH = "chatcli.config.json";
@@ -10,6 +10,7 @@ const DEFAULT_CONFIG_PATH = "chatcli.config.json";
  */
 export function loadConfig(configPath?: string): AppConfig {
   const filePath = resolve(configPath ?? DEFAULT_CONFIG_PATH);
+  const configDir = dirname(filePath);
 
   let fileConfig: Partial<AppConfig> = {};
   if (existsSync(filePath)) {
@@ -41,7 +42,21 @@ export function loadConfig(configPath?: string): AppConfig {
         process.env["CHATCLI_SYSTEM_PROMPT"] ?? fileConfig.llm?.systemPrompt,
     },
     mcpServers: fileConfig.mcpServers,
-    skillsDir: process.env["CHATCLI_SKILLS_DIR"] ?? fileConfig.skillsDir,
+    skillsDir: (() => {
+      const envSkillsDir = process.env["CHATCLI_SKILLS_DIR"];
+      if (envSkillsDir) {
+        return resolve(envSkillsDir);
+      }
+
+      const fileSkillsDir = fileConfig.skillsDir;
+      if (fileSkillsDir) {
+        return isAbsolute(fileSkillsDir)
+          ? fileSkillsDir
+          : resolve(configDir, fileSkillsDir);
+      }
+
+      return undefined;
+    })(),
   };
 
   return config;

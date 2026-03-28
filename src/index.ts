@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { resolve } from "path";
 import { loadConfig } from "./config.ts";
 import { LLMProvider } from "./llm/index.ts";
 import { MCPClientManager } from "./mcp/index.ts";
@@ -31,7 +32,8 @@ async function main() {
 
   // Initialize skill registry and load skills
   const skillRegistry = new SkillRegistry();
-  const skillsDir = config.skillsDir ?? "skills";
+  const skillsDir = resolve(config.skillsDir ?? "skills");
+  console.log(`Skills: using directory "${skillsDir}"`);
   await skillRegistry.loadFromDirectory(skillsDir);
 
   const loadedSkills = skillRegistry.list();

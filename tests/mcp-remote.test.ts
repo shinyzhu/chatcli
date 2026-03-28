@@ -239,4 +239,87 @@ describe("MCPClientManager — remote (SSE) servers", () => {
     expect(receivedSessionId).toBe("session-abc");
     manager.closeAll();
   });
+
+  test("connects and lists tools with type=http transport", async () => {
+    startMockServer((req) =>
+      req.json().then((body: unknown) => {
+        const parsed = body as { id?: number; method: string };
+        if (parsed.method === "initialize") {
+          return Response.json({
+            jsonrpc: "2.0",
+            id: parsed.id,
+            result: {
+              protocolVersion: "2024-11-05",
+              capabilities: {},
+              serverInfo: { name: "http-server", version: "1.0.0" },
+            },
+          });
+        }
+        if (parsed.method === "tools/list") {
+          return Response.json({
+            jsonrpc: "2.0",
+            id: parsed.id,
+            result: {
+              tools: [
+                {
+                  name: "http-tool",
+                  description: "A tool from HTTP transport",
+                },
+              ],
+            },
+          });
+        }
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    const manager = new MCPClientManager();
+    await manager.connect("http-remote", {
+      type: "http",
+      url: `http://localhost:${serverPort}`,
+    });
+
+    const tools = await manager.listAllTools();
+    expect(tools).toHaveLength(1);
+    expect(tools[0]!.name).toBe("http-tool");
+    expect(tools[0]!.server).toBe("http-remote");
+    manager.closeAll();
+  });
+
+  test("sends Accept header on notifications/initialized", async () => {
+    let notificationAcceptHeader = "";
+    startMockServer((req) =>
+      req.json().then((body: unknown) => {
+        const parsed = body as { id?: number; method: string };
+        if (parsed.method === "initialize") {
+          return Response.json({
+            jsonrpc: "2.0",
+            id: parsed.id,
+            result: {
+              protocolVersion: "2024-11-05",
+              capabilities: {},
+              serverInfo: { name: "accept-server", version: "1.0.0" },
+            },
+          });
+        }
+
+        if (parsed.method === "notifications/initialized") {
+          notificationAcceptHeader = req.headers.get("accept") ?? "";
+          return new Response(null, { status: 204 });
+        }
+
+        return new Response(null, { status: 204 });
+      }),
+    );
+
+    const manager = new MCPClientManager();
+    await manager.connect("accept-remote", {
+      type: "http",
+      url: `http://localhost:${serverPort}`,
+    });
+
+    expect(notificationAcceptHeader).toContain("application/json");
+    expect(notificationAcceptHeader).toContain("text/event-stream");
+    manager.closeAll();
+  });
 });

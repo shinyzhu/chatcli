@@ -11,8 +11,8 @@
       "args": ["-y", "@modelcontextprotocol/server-everything"]
     },
     "remote-server": {
-      "type": "sse",
-      "url": "https://mcp.example.com/sse",
+      "type": "http",
+      "url": "https://mcp.example.com/mcp",
       "headers": {
         "Authorization": "Bearer your-api-key"
       }

@@ -138,7 +138,7 @@ class StdioMCPConnection implements IMCPConnection {
 }
 
 /**
- * A connection to a remote MCP server via HTTP with SSE support.
+ * A connection to a remote MCP server via HTTP with optional SSE responses.
  *
  * Uses the MCP Streamable HTTP transport:
  * - Sends JSON-RPC requests via HTTP POST
@@ -282,6 +282,7 @@ class RemoteMCPConnection implements IMCPConnection {
 
     const requestHeaders: Record<string, string> = {
       "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
       ...this.headers,
     };
     if (this.sessionId) {
@@ -331,7 +332,7 @@ class RemoteMCPConnection implements IMCPConnection {
 }
 
 /**
- * Returns true if the config describes a remote (SSE) server.
+ * Returns true if the config describes a remote HTTP-based server.
  */
 function isRemoteConfig(
   config: MCPServerConfig,
@@ -347,7 +348,7 @@ export class MCPClientManager {
 
   /**
    * Connect to an MCP server.
-   * Automatically detects stdio vs remote (SSE) based on config.
+    * Automatically detects stdio vs remote HTTP-based transport based on config.
    */
   async connect(name: string, config: MCPServerConfig): Promise<void> {
     let conn: IMCPConnection;

@@ -24,6 +24,7 @@ export class CLI {
   private skillRegistry: SkillRegistry;
   private history: ChatMessage[] = [];
   private config: AppConfig;
+  private readonly maxToolHops = 4;
 
   constructor(
     config: AppConfig,
@@ -153,7 +154,8 @@ export class CLI {
           } else {
             console.log("Available MCP tools:");
             for (const t of tools) {
-              console.log(`  [${t.server}] ${t.name} — ${t.description}`);
+              const description = t.description?.trim() || "No description";
+              console.log(`  [${t.server}] ${t.name} — ${description}`);
             }
             console.log();
           }
@@ -176,21 +178,199 @@ export class CLI {
     this.history.push({ role: "user", content: userMessage });
 
     try {
-      process.stdout.write("assistant> ");
-      let fullResponse = "";
-      for await (const chunk of this.llm.chatStream(this.history)) {
-        process.stdout.write(chunk);
-        fullResponse += chunk;
-      }
-      console.log("\n");
+      let hops = 0;
+      while (hops < this.maxToolHops) {
+        const response = await this.llm.chat(await this.messagesForLLM());
+        const toolCall = this.parseToolCommand(response);
+        if (!toolCall) {
+          process.stdout.write("assistant> ");
+          console.log(response + "\n");
+          this.history.push({ role: "assistant", content: response });
+          return;
+        }
 
-      this.history.push({ role: "assistant", content: fullResponse });
+        process.stdout.write("assistant> ");
+        let toolResultText = "";
+        if (toolCall.type === "skill") {
+          console.log(`[using skill ${toolCall.name}]`);
+          toolResultText = await this.skillRegistry.invoke(
+            toolCall.name,
+            toolCall.input,
+          );
+        } else {
+          console.log(`[using mcp ${toolCall.server}.${toolCall.tool}]`);
+          try {
+            const rawResult = await this.mcp.callTool(
+              toolCall.server,
+              toolCall.tool,
+              toolCall.args,
+            );
+            toolResultText = this.stringifyToolResult(rawResult);
+          } catch (err) {
+            toolResultText =
+              `Error calling MCP tool ${toolCall.server}.${toolCall.tool}: ` +
+              `${err instanceof Error ? err.message : String(err)}`;
+          }
+        }
+
+        this.history.push({ role: "assistant", content: response });
+        this.history.push({
+          role: "user",
+          content:
+            `Tool result:\n${toolResultText}\n` +
+            "Use this result to answer the original request.",
+        });
+
+        hops += 1;
+      }
+
+      process.stdout.write("assistant> ");
+      const exhaustedMessage =
+        "I couldn't complete the request because too many tool calls were needed. Please try a more specific prompt or call /skill or /mcp directly.";
+      console.log(exhaustedMessage + "\n");
+      this.history.push({ role: "assistant", content: exhaustedMessage });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : String(err);
       console.error(`Error: ${message}\n`);
       // Remove the failed user message from history
       this.history.pop();
+    }
+  }
+
+  private async messagesForLLM(): Promise<ChatMessage[]> {
+    const skills = this.skillRegistry.list();
+    let mcpTools: Array<{
+      server: string;
+      name: string;
+      description: string;
+    }> = [];
+
+    try {
+      const tools = await this.mcp.listAllTools();
+      mcpTools = tools.map((t) => ({
+        server: t.server,
+        name: t.name,
+        description: t.description ?? "",
+      }));
+    } catch {
+      // Ignore MCP listing errors when building prompt context.
+    }
+
+    if (skills.length === 0 && mcpTools.length === 0) {
+      return this.history;
+    }
+
+    const skillLines = skills.map((s) => `- ${s.name}: ${s.description}`);
+    const mcpLines = mcpTools.map(
+      (t) => `- ${t.server}.${t.name}: ${t.description}`,
+    );
+
+    let toolSystemMessage = "You can use local tools when helpful.\n";
+    if (skillLines.length > 0) {
+      toolSystemMessage += `Available skills:\n${skillLines.join("\n")}\n\n`;
+    }
+    if (mcpLines.length > 0) {
+      toolSystemMessage += `Available MCP tools:\n${mcpLines.join("\n")}\n\n`;
+    }
+    toolSystemMessage +=
+      "To call a skill, respond with exactly one line in this format and nothing else:\n" +
+      "/skill <name> <input>\n\n" +
+      "To call an MCP tool, respond with exactly one line in this format and nothing else:\n" +
+      "/mcp <server> <tool> <json-args>\n" +
+      "or /mcp <server>.<tool> <json-args>\n" +
+      "Example: /mcp weather-server forecast {\"city\":\"Seattle\"}\n" +
+      "Example: /mcp weather-server.forecast {\"city\":\"Seattle\"}\n" +
+      "If no arguments are needed, use {} as json-args.\n" +
+      "After receiving a tool result, continue normally with a final answer.";
+
+    return [
+      { role: "system", content: toolSystemMessage },
+      ...this.history,
+    ];
+  }
+
+  private parseToolCommand(
+    response: string,
+  ):
+    | { type: "skill"; name: string; input: string }
+    | {
+        type: "mcp";
+        server: string;
+        tool: string;
+        args: Record<string, unknown>;
+      }
+    | null {
+    const trimmed = response.trim();
+
+    const skillMatch = trimmed.match(/^\/skill\s+(\S+)(?:\s+([\s\S]*))?$/);
+    if (skillMatch) {
+      const name = skillMatch[1]?.trim() ?? "";
+      const input = (skillMatch[2] ?? "").trim();
+      if (!name) {
+        return null;
+      }
+      return { type: "skill", name, input };
+    }
+
+    let server = "";
+    let tool = "";
+    let argsRaw = "{}";
+
+    const mcpDotMatch = trimmed.match(
+      /^\/mcp\s+([^.\s]+)\.([^\s]+)(?:\s+([\s\S]*))?$/,
+    );
+    if (mcpDotMatch) {
+      server = mcpDotMatch[1]?.trim() ?? "";
+      tool = mcpDotMatch[2]?.trim() ?? "";
+      argsRaw = (mcpDotMatch[3] ?? "{}").trim() || "{}";
+    } else {
+      const mcpMatch = trimmed.match(
+        /^\/mcp\s+(\S+)\s+(\S+)(?:\s+([\s\S]*))?$/,
+      );
+      if (!mcpMatch) {
+        return null;
+      }
+
+      server = mcpMatch[1]?.trim() ?? "";
+      tool = mcpMatch[2]?.trim() ?? "";
+      argsRaw = (mcpMatch[3] ?? "{}").trim() || "{}";
+    }
+
+    if (!server || !tool) {
+      return null;
+    }
+
+    try {
+      const parsedArgs = JSON.parse(argsRaw) as unknown;
+      if (
+        parsedArgs === null ||
+        typeof parsedArgs !== "object" ||
+        Array.isArray(parsedArgs)
+      ) {
+        return null;
+      }
+
+      return {
+        type: "mcp",
+        server,
+        tool,
+        args: parsedArgs as Record<string, unknown>,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private stringifyToolResult(result: unknown): string {
+    if (typeof result === "string") {
+      return result;
+    }
+
+    try {
+      return JSON.stringify(result, null, 2);
+    } catch {
+      return String(result);
     }
   }
 }

@@ -68,4 +68,27 @@ describe("loadConfig", () => {
 
     require("fs").unlinkSync(tmpConfig);
   });
+
+  test("resolves relative skillsDir from config file directory", () => {
+    const tmpDir = "/tmp/chatcli-config-relative";
+    const tmpConfig = `${tmpDir}/chatcli.config.json`;
+    require("fs").mkdirSync(tmpDir, { recursive: true });
+    require("fs").writeFileSync(
+      tmpConfig,
+      JSON.stringify({
+        llm: {
+          baseURL: "http://example.com/v1",
+          apiKey: "test-key",
+          model: "test-model",
+        },
+        skillsDir: "skills",
+      }),
+    );
+
+    const config = loadConfig(tmpConfig);
+    expect(config.skillsDir).toBe(`${tmpDir}/skills`);
+
+    require("fs").unlinkSync(tmpConfig);
+    require("fs").rmdirSync(tmpDir);
+  });
 });
