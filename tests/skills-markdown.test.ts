@@ -176,5 +176,9 @@ Just a body.`,
     expect(names).toContain("summarize");
     expect(names).toContain("reverse");
     expect(names).toContain("datetime");
+
+    // Verify the markdown skill actually works
+    const result = await registry.invoke("summarize", "Some long text here");
+    expect(result).toContain("Some long text here");
   });
 });

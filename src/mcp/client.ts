@@ -336,7 +336,7 @@ class RemoteMCPConnection implements IMCPConnection {
 function isRemoteConfig(
   config: MCPServerConfig,
 ): config is RemoteMCPServerConfig {
-  return config.type === "sse" || "url" in config;
+  return "url" in config;
 }
 
 /**
