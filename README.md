@@ -5,8 +5,8 @@ A CLI app that combines custom LLM, MCP (Model Context Protocol) and loadable Sk
 ## Features
 
 - **Custom LLM** — Connect to any OpenAI-compatible API endpoint (Ollama, LM Studio, vLLM, etc.)
-- **MCP Support** — Connect to MCP servers via stdio and use their tools
-- **Skills** — Load custom skill modules from a directory to extend functionality
+- **MCP Support** — Connect to MCP servers via stdio or remote HTTP/SSE and use their tools
+- **Skills** — Load custom skill modules from a directory (TypeScript, JavaScript, or Markdown)
 - **Streaming** — Responses stream in real-time from the LLM
 - **Interactive CLI** — Chat with your LLM using slash commands
 
@@ -45,12 +45,42 @@ chatcli can be configured via a JSON config file or environment variables. Envir
     "systemPrompt": "You are a helpful assistant."
   },
   "mcpServers": {
-    "my-server": {
+    "local-server": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-everything"]
+    },
+    "remote-server": {
+      "type": "sse",
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "Authorization": "Bearer your-api-key"
+      }
     }
   },
   "skillsDir": "skills"
+}
+```
+
+### MCP Server Types
+
+**Stdio (local)** — starts a local process and communicates via stdin/stdout:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-everything"]
+}
+```
+
+**SSE (remote)** — connects to a remote MCP server via HTTP/SSE:
+
+```json
+{
+  "type": "sse",
+  "url": "https://mcp.example.com/sse",
+  "headers": {
+    "Authorization": "Bearer your-api-key"
+  }
 }
 ```
 
@@ -78,7 +108,11 @@ chatcli can be configured via a JSON config file or environment variables. Envir
 
 ## Skills
 
-Skills are TypeScript/JavaScript modules that export a `Skill` object. Place them in the skills directory (default: `skills/`).
+Skills are modules that extend chatcli. Place them in the skills directory (default: `skills/`).
+
+### TypeScript/JavaScript skills
+
+Export a `Skill` object as the default export:
 
 ```typescript
 import type { Skill } from "../src/types.ts";
@@ -94,9 +128,26 @@ const mySkill: Skill = {
 export default mySkill;
 ```
 
-Two example skills are included:
+### Markdown skills
+
+Create a `.md` file with YAML frontmatter (`name`, `description`) and a body template. Use `{input}` as a placeholder for the invocation input:
+
+```markdown
+---
+name: summarize
+description: Summarize the given text into a concise paragraph
+---
+
+Please provide a concise summary of the following text:
+
+{input}
+```
+
+### Built-in example skills
+
 - `reverse` — Reverses input text
 - `datetime` — Returns the current date and time
+- `summarize` — Prompt template for text summarization (markdown)
 
 ## Project Structure
 

@@ -1,6 +1,52 @@
-import { readdirSync, existsSync } from "fs";
+import { readdirSync, readFileSync, existsSync } from "fs";
 import { resolve, extname } from "path";
 import type { Skill } from "../types.ts";
+
+/**
+ * Parse YAML-style frontmatter from a markdown string.
+ * Returns the frontmatter key/value pairs and the body after the frontmatter.
+ */
+function parseMarkdownSkill(
+  content: string,
+): { meta: Record<string, string>; body: string } | null {
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!fmMatch) return null;
+
+  const meta: Record<string, string> = {};
+  const fmBlock = fmMatch[1] ?? "";
+  for (const line of fmBlock.split("\n")) {
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    if (key) {
+      meta[key] = value;
+    }
+  }
+
+  const body = (fmMatch[2] ?? "").trim();
+  return { meta, body };
+}
+
+/**
+ * Create a Skill from a parsed markdown definition.
+ * The body acts as a prompt template; occurrences of `{input}` are replaced
+ * with the actual invocation input.
+ */
+function markdownToSkill(
+  name: string,
+  description: string,
+  body: string,
+): Skill {
+  return {
+    name,
+    description,
+    async invoke(input: string) {
+      const content = body.replace(/\{input\}/g, input);
+      return { content };
+    },
+  };
+}
 
 /**
  * Registry that loads and manages skills from a directory.
@@ -18,7 +64,9 @@ export class SkillRegistry {
 
   /**
    * Load all skills from a directory.
-   * Skill files must be .ts or .js and default-export a Skill object.
+   * Skill files can be:
+   * - `.ts` / `.js` — must default-export a Skill object
+   * - `.md` — markdown with YAML frontmatter (name, description) and a body template
    */
   async loadFromDirectory(dirPath: string): Promise<void> {
     const absDir = resolve(dirPath);
@@ -30,9 +78,39 @@ export class SkillRegistry {
     const entries = readdirSync(absDir);
     for (const entry of entries) {
       const ext = extname(entry);
+      const fullPath = resolve(absDir, entry);
+
+      if (ext === ".md") {
+        try {
+          const raw = readFileSync(fullPath, "utf-8");
+          const parsed = parseMarkdownSkill(raw);
+          if (!parsed) {
+            console.error(
+              `Warning: ${entry} does not have valid frontmatter (---\\n...\\n---)`,
+            );
+            continue;
+          }
+          const { meta, body } = parsed;
+          const name = meta["name"];
+          const description = meta["description"] ?? "";
+          if (!name) {
+            console.error(
+              `Warning: ${entry} frontmatter is missing required "name" field`,
+            );
+            continue;
+          }
+          this.register(markdownToSkill(name, description, body));
+        } catch (err) {
+          console.error(
+            `Warning: failed to load markdown skill from ${entry}:`,
+            err,
+          );
+        }
+        continue;
+      }
+
       if (ext !== ".ts" && ext !== ".js") continue;
 
-      const fullPath = resolve(absDir, entry);
       try {
         const mod = await import(fullPath);
         const skill = mod.default as Skill;
