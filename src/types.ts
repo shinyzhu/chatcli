@@ -33,8 +33,10 @@ export interface LLMConfig {
   systemPrompt?: string;
 }
 
-/** Configuration for an MCP server connection */
-export interface MCPServerConfig {
+/** Configuration for a stdio-based MCP server connection */
+export interface StdioMCPServerConfig {
+  /** Transport type (defaults to "stdio" when command is present) */
+  type?: "stdio";
   /** Command to start the MCP server */
   command: string;
   /** Arguments to pass to the command */
@@ -42,6 +44,19 @@ export interface MCPServerConfig {
   /** Environment variables for the server process */
   env?: Record<string, string>;
 }
+
+/** Configuration for a remote (HTTP/SSE) MCP server connection */
+export interface RemoteMCPServerConfig {
+  /** Transport type */
+  type: "sse";
+  /** URL of the remote MCP server endpoint */
+  url: string;
+  /** Optional HTTP headers (e.g. for authentication) */
+  headers?: Record<string, string>;
+}
+
+/** Configuration for an MCP server connection */
+export type MCPServerConfig = StdioMCPServerConfig | RemoteMCPServerConfig;
 
 /** Top-level application configuration */
 export interface AppConfig {
