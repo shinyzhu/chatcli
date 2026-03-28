@@ -1,0 +1,10 @@
+{
+  "llm": {
+    "baseURL": "http://localhost:11434/v1",
+    "apiKey": "no-key",
+    "model": "llama3",
+    "systemPrompt": "You are a helpful assistant."
+  },
+  "mcpServers": {},
+  "skillsDir": "skills"
+}
