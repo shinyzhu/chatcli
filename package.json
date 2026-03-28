@@ -1,0 +1,14 @@
+{
+  "name": "chatcli",
+  "version": "1.0.0",
+  "description": "A CLI app that combines custom LLM, MCP and loadable Skills",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "test": "bun test"
+  },
+  "bin": {
+    "chatcli": "src/index.ts"
+  }
+}
