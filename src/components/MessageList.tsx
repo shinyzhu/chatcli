@@ -3,8 +3,14 @@ import { Box, Text, Static } from "ink";
 import type { ChatMessage } from "../types.ts";
 import MarkdownText from "./MarkdownText.tsx";
 
+/** A chat message annotated with display-only metadata. */
+export interface DisplayMessage extends ChatMessage {
+  /** When true the message is rendered as an error. */
+  isError?: boolean;
+}
+
 interface Props {
-  messages: ChatMessage[];
+  messages: DisplayMessage[];
 }
 
 /**
@@ -23,8 +29,6 @@ export default function MessageList({ messages }: Props) {
     <Static items={visible}>
       {(msg, index) => {
         const isUser = msg.role === "user";
-        const isError =
-          !isUser && msg.content.startsWith("Error:");
 
         return (
           <Box key={index} flexDirection="column" marginBottom={1}>
@@ -35,7 +39,7 @@ export default function MessageList({ messages }: Props) {
               <Box marginLeft={2}>
                 <Text>{msg.content}</Text>
               </Box>
-            ) : isError ? (
+            ) : msg.isError ? (
               <Box marginLeft={2}>
                 <Text color="red" bold>
                   {msg.content}

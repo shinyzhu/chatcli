@@ -1,15 +1,7 @@
 import React from "react";
-import { Text } from "ink";
-import { marked } from "marked";
+import { Text, useStdout } from "ink";
+import { marked, type MarkedOptions } from "marked";
 import { markedTerminal } from "marked-terminal";
-
-// Configure marked with terminal renderer
-marked.use(
-  markedTerminal({
-    reflowText: true,
-    width: 80,
-  }),
-);
 
 interface Props {
   children: string;
@@ -17,12 +9,24 @@ interface Props {
 
 /**
  * Renders markdown content as styled terminal text using marked + marked-terminal.
- * Falls back to plain text if rendering fails.
+ * Adapts width to the current terminal size. Falls back to plain text if rendering fails.
  */
 export default function MarkdownText({ children }: Props) {
+  const { stdout } = useStdout();
+  const terminalWidth = stdout?.columns ?? 80;
+  // Account for the 2-char left margin in MessageList
+  const width = Math.max(40, terminalWidth - 4);
+
   let rendered: string;
   try {
-    rendered = (marked(children) as string).trimEnd();
+    const localMarked = new marked.Marked();
+    localMarked.use(
+      markedTerminal({
+        reflowText: true,
+        width,
+      }) as MarkedOptions,
+    );
+    rendered = (localMarked.parse(children) as string).trimEnd();
   } catch {
     rendered = children;
   }

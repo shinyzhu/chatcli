@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useMemo } from "react";
 import { Box, Text, useApp } from "ink";
 import MessageList from "./MessageList.tsx";
+import type { DisplayMessage } from "./MessageList.tsx";
 import InputPrompt from "./InputPrompt.tsx";
 import { ChatEngine } from "../engine.ts";
 import type { LLMProvider } from "../llm/index.ts";
 import type { MCPClientManager } from "../mcp/index.ts";
 import type { SkillRegistry } from "../skills/index.ts";
-import type { AppConfig, ChatMessage } from "../types.ts";
+import type { AppConfig } from "../types.ts";
 
 interface Props {
   config: AppConfig;
@@ -27,7 +28,7 @@ export default function App({ config, llm, mcp, skillRegistry }: Props) {
     [config, llm, mcp, skillRegistry],
   );
 
-  const [history, setHistory] = useState<ChatMessage[]>(engine.getHistory());
+  const [history, setHistory] = useState<DisplayMessage[]>(engine.getHistory());
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -67,11 +68,15 @@ export default function App({ config, llm, mcp, skillRegistry }: Props) {
         setHistory(engine.getHistory());
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        engine.history.push({
+        const errorMsg: DisplayMessage = {
           role: "assistant" as const,
           content: `Error: ${message}`,
-        });
-        setHistory(engine.getHistory());
+          isError: true,
+        };
+        engine.history.push(errorMsg);
+        setHistory(engine.getHistory().map((m, i, arr) =>
+          i === arr.length - 1 ? { ...m, isError: true } : m,
+        ));
       } finally {
         setIsLoading(false);
         setStatusMessage("");
