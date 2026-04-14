@@ -10,5 +10,13 @@
   },
   "bin": {
     "chatcli": "src/index.ts"
+  },
+  "dependencies": {
+    "ink": "^7.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14"
   }
 }
