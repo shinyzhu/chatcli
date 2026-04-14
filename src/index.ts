@@ -5,7 +5,7 @@ import { loadConfig } from "./config.ts";
 import { LLMProvider } from "./llm/index.ts";
 import { MCPClientManager } from "./mcp/index.ts";
 import { SkillRegistry } from "./skills/index.ts";
-import { CLI } from "./cli.ts";
+import { CLI } from "./cli.tsx";
 
 async function main() {
   const configPath = process.argv[2]; // optional: path to config file

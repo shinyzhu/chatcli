@@ -1,30 +1,20 @@
-import * as readline from "readline";
-import { LLMProvider } from "./llm/index.ts";
-import { MCPClientManager } from "./mcp/index.ts";
-import { SkillRegistry } from "./skills/index.ts";
+import type { LLMProvider } from "./llm/index.ts";
+import type { MCPClientManager } from "./mcp/index.ts";
+import type { SkillRegistry } from "./skills/index.ts";
 import type { AppConfig, ChatMessage } from "./types.ts";
 
-const HELP_TEXT = `
-Commands:
-  /help              Show this help message
-  /skills            List loaded skills
-  /skill <name> <input>  Invoke a skill
-  /mcp servers       List connected MCP servers
-  /mcp tools         List available MCP tools
-  /clear             Clear conversation history
-  /exit              Exit chatcli
-`;
+const MAX_TOOL_HOPS = 4;
 
 /**
- * Interactive CLI chat loop.
+ * Core chat engine that manages conversation history and handles commands.
+ * This is the business logic extracted from the CLI, usable by any UI layer.
  */
-export class CLI {
+export class ChatEngine {
+  history: ChatMessage[] = [];
+  private config: AppConfig;
   private llm: LLMProvider;
   private mcp: MCPClientManager;
   private skillRegistry: SkillRegistry;
-  private history: ChatMessage[] = [];
-  private config: AppConfig;
-  private readonly maxToolHops = 4;
 
   constructor(
     config: AppConfig,
@@ -43,162 +33,35 @@ export class CLI {
   }
 
   /**
-   * Start the interactive REPL.
+   * Send a user message to the LLM, handling tool call loops.
+   * Returns a log of events for the UI to render.
    */
-  async run(): Promise<void> {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    console.log("chatcli — type /help for commands, /exit to quit\n");
-
-    const prompt = () => {
-      rl.question("you> ", async (input: string) => {
-        const trimmed = input.trim();
-        if (!trimmed) {
-          prompt();
-          return;
-        }
-
-        if (trimmed.startsWith("/")) {
-          const shouldContinue = await this.handleCommand(trimmed);
-          if (!shouldContinue) {
-            rl.close();
-            return;
-          }
-          prompt();
-          return;
-        }
-
-        await this.chat(trimmed);
-        prompt();
-      });
-    };
-
-    prompt();
-  }
-
-  /**
-   * Handle a slash command. Returns false if the CLI should exit.
-   */
-  private async handleCommand(input: string): Promise<boolean> {
-    const parts = input.split(/\s+/);
-    const cmd = parts[0];
-
-    switch (cmd) {
-      case "/exit":
-      case "/quit":
-        console.log("Goodbye!");
-        this.mcp.closeAll();
-        return false;
-
-      case "/help":
-        console.log(HELP_TEXT);
-        return true;
-
-      case "/clear":
-        this.history = [];
-        if (this.config.llm.systemPrompt) {
-          this.history.push({
-            role: "system",
-            content: this.config.llm.systemPrompt,
-          });
-        }
-        console.log("Conversation cleared.\n");
-        return true;
-
-      case "/skills": {
-        const skills = this.skillRegistry.list();
-        if (skills.length === 0) {
-          console.log("No skills loaded.\n");
-        } else {
-          console.log("Loaded skills:");
-          for (const s of skills) {
-            console.log(`  ${s.name} — ${s.description}`);
-          }
-          console.log();
-        }
-        return true;
-      }
-
-      case "/skill": {
-        const skillName = parts[1];
-        if (!skillName) {
-          console.log("Usage: /skill <name> <input>\n");
-          return true;
-        }
-        const skillInput = parts.slice(2).join(" ");
-        const result = await this.skillRegistry.invoke(skillName, skillInput);
-        console.log(result + "\n");
-        return true;
-      }
-
-      case "/mcp": {
-        const subCmd = parts[1];
-        if (subCmd === "servers") {
-          const servers = this.mcp.serverNames;
-          if (servers.length === 0) {
-            console.log("No MCP servers connected.\n");
-          } else {
-            console.log("Connected MCP servers:");
-            for (const s of servers) {
-              console.log(`  ${s}`);
-            }
-            console.log();
-          }
-        } else if (subCmd === "tools") {
-          const tools = await this.mcp.listAllTools();
-          if (tools.length === 0) {
-            console.log("No MCP tools available.\n");
-          } else {
-            console.log("Available MCP tools:");
-            for (const t of tools) {
-              const description = t.description?.trim() || "No description";
-              console.log(`  [${t.server}] ${t.name} — ${description}`);
-            }
-            console.log();
-          }
-        } else {
-          console.log("Usage: /mcp servers | /mcp tools\n");
-        }
-        return true;
-      }
-
-      default:
-        console.log(`Unknown command: ${cmd}. Type /help for help.\n`);
-        return true;
-    }
-  }
-
-  /**
-   * Send a user message to the LLM and stream the response.
-   */
-  private async chat(userMessage: string): Promise<void> {
+  async chat(
+    userMessage: string,
+    onStatus?: (message: string) => void,
+  ): Promise<void> {
     this.history.push({ role: "user", content: userMessage });
 
     try {
       let hops = 0;
-      while (hops < this.maxToolHops) {
+      while (hops < MAX_TOOL_HOPS) {
         const response = await this.llm.chat(await this.messagesForLLM());
         const toolCall = this.parseToolCommand(response);
+
         if (!toolCall) {
-          process.stdout.write("assistant> ");
-          console.log(response + "\n");
           this.history.push({ role: "assistant", content: response });
           return;
         }
 
-        process.stdout.write("assistant> ");
         let toolResultText = "";
         if (toolCall.type === "skill") {
-          console.log(`[using skill ${toolCall.name}]`);
+          onStatus?.(`[using skill ${toolCall.name}]`);
           toolResultText = await this.skillRegistry.invoke(
             toolCall.name,
             toolCall.input,
           );
         } else {
-          console.log(`[using mcp ${toolCall.server}.${toolCall.tool}]`);
+          onStatus?.(`[using mcp ${toolCall.server}.${toolCall.tool}]`);
           try {
             const rawResult = await this.mcp.callTool(
               toolCall.server,
@@ -224,18 +87,133 @@ export class CLI {
         hops += 1;
       }
 
-      process.stdout.write("assistant> ");
+      // Exhausted tool hops
       const exhaustedMessage =
         "I couldn't complete the request because too many tool calls were needed. Please try a more specific prompt or call /skill or /mcp directly.";
-      console.log(exhaustedMessage + "\n");
       this.history.push({ role: "assistant", content: exhaustedMessage });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : String(err);
-      console.error(`Error: ${message}\n`);
+      const message = err instanceof Error ? err.message : String(err);
       // Remove the failed user message from history
       this.history.pop();
+      throw new Error(message);
     }
+  }
+
+  /**
+   * Handle a slash command. Returns false if the CLI should exit.
+   */
+  async handleCommand(input: string): Promise<{
+    shouldContinue: boolean;
+    output: string;
+  }> {
+    const parts = input.split(/\s+/);
+    const cmd = parts[0];
+
+    switch (cmd) {
+      case "/exit":
+      case "/quit":
+        this.mcp.closeAll();
+        return { shouldContinue: false, output: "Goodbye!" };
+
+      case "/help":
+        return {
+          shouldContinue: true,
+          output: `Commands:
+  /help              Show this help message
+  /skills            List loaded skills
+  /skill <name> <input>  Invoke a skill
+  /mcp servers       List connected MCP servers
+  /mcp tools         List available MCP tools
+  /clear             Clear conversation history
+  /exit              Exit chatcli`,
+        };
+
+      case "/clear":
+        this.history = [];
+        if (this.config.llm.systemPrompt) {
+          this.history.push({
+            role: "system",
+            content: this.config.llm.systemPrompt,
+          });
+        }
+        return { shouldContinue: true, output: "Conversation cleared." };
+
+      case "/skills": {
+        const skills = this.skillRegistry.list();
+        if (skills.length === 0) {
+          return { shouldContinue: true, output: "No skills loaded." };
+        }
+        const lines = skills.map((s) => `  ${s.name} — ${s.description}`);
+        return {
+          shouldContinue: true,
+          output: "Loaded skills:\n" + lines.join("\n"),
+        };
+      }
+
+      case "/skill": {
+        const skillName = parts[1];
+        if (!skillName) {
+          return {
+            shouldContinue: true,
+            output: "Usage: /skill <name> <input>",
+          };
+        }
+        const skillInput = parts.slice(2).join(" ");
+        const result = await this.skillRegistry.invoke(skillName, skillInput);
+        return { shouldContinue: true, output: result };
+      }
+
+      case "/mcp": {
+        const subCmd = parts[1];
+        if (subCmd === "servers") {
+          const servers = this.mcp.serverNames;
+          if (servers.length === 0) {
+            return {
+              shouldContinue: true,
+              output: "No MCP servers connected.",
+            };
+          }
+          const lines = servers.map((s) => `  ${s}`);
+          return {
+            shouldContinue: true,
+            output: "Connected MCP servers:\n" + lines.join("\n"),
+          };
+        } else if (subCmd === "tools") {
+          const tools = await this.mcp.listAllTools();
+          if (tools.length === 0) {
+            return {
+              shouldContinue: true,
+              output: "No MCP tools available.",
+            };
+          }
+          const lines = tools.map((t) => {
+            const description = t.description?.trim() || "No description";
+            return `  [${t.server}] ${t.name} — ${description}`;
+          });
+          return {
+            shouldContinue: true,
+            output: "Available MCP tools:\n" + lines.join("\n"),
+          };
+        }
+        return {
+          shouldContinue: true,
+          output: "Usage: /mcp servers | /mcp tools",
+        };
+      }
+
+      default:
+        return {
+          shouldContinue: true,
+          output: `Unknown command: ${cmd}. Type /help for help.`,
+        };
+    }
+  }
+
+  /**
+   * Get a snapshot of the current history.
+   */
+  getHistory(): ChatMessage[] {
+    return [...this.history];
   }
 
   private async messagesForLLM(): Promise<ChatMessage[]> {
@@ -279,8 +257,8 @@ export class CLI {
       "To call an MCP tool, respond with exactly one line in this format and nothing else:\n" +
       "/mcp <server> <tool> <json-args>\n" +
       "or /mcp <server>.<tool> <json-args>\n" +
-      "Example: /mcp weather-server forecast {\"city\":\"Seattle\"}\n" +
-      "Example: /mcp weather-server.forecast {\"city\":\"Seattle\"}\n" +
+      'Example: /mcp weather-server forecast {"city":"Seattle"}\n' +
+      'Example: /mcp weather-server.forecast {"city":"Seattle"}\n' +
       "If no arguments are needed, use {} as json-args.\n" +
       "After receiving a tool result, continue normally with a final answer.";
 
@@ -290,7 +268,7 @@ export class CLI {
     ];
   }
 
-  private parseToolCommand(
+  parseToolCommand(
     response: string,
   ):
     | { type: "skill"; name: string; input: string }

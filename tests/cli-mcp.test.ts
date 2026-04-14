@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { CLI } from "../src/cli.ts";
+import { ChatEngine } from "../src/engine.ts";
 import { LLMProvider } from "../src/llm/provider.ts";
 import { MCPClientManager } from "../src/mcp/client.ts";
 import { SkillRegistry } from "../src/skills/registry.ts";
@@ -73,10 +73,8 @@ describe("CLI MCP tool usage", () => {
       return { city: "Paris", condition: "sunny" };
     };
 
-    const cli = new CLI(config, llm, mcp, skills);
-    await (cli as unknown as { chat: (userMessage: string) => Promise<void> }).chat(
-      "What's the weather in Paris?",
-    );
+    const engine = new ChatEngine(config, llm, mcp, skills);
+    await engine.chat("What's the weather in Paris?");
 
     expect(llmChatCalls).toBe(2);
     expect(mcpCall).toBeDefined();
@@ -84,7 +82,7 @@ describe("CLI MCP tool usage", () => {
     expect(mcpCall!.toolName).toBe("forecast");
     expect(mcpCall!.args).toEqual({ city: "Paris" });
 
-    const history = (cli as unknown as { history: Array<{ role: string; content: string }> }).history;
+    const history = engine.history;
     expect(history[history.length - 1]?.role).toBe("assistant");
     expect(history[history.length - 1]?.content).toBe(
       "The forecast for Paris is sunny.",
@@ -141,10 +139,8 @@ describe("CLI MCP tool usage", () => {
       return {};
     };
 
-    const cli = new CLI(config, llm, mcp, skills);
-    await (cli as unknown as { chat: (userMessage: string) => Promise<void> }).chat(
-      "Need weather info",
-    );
+    const engine = new ChatEngine(config, llm, mcp, skills);
+    await engine.chat("Need weather info");
 
     expect(mcpCalled).toBe(false);
   });
@@ -216,10 +212,8 @@ describe("CLI MCP tool usage", () => {
       return { city: "Tokyo" };
     };
 
-    const cli = new CLI(config, llm, mcp, skills);
-    await (cli as unknown as { chat: (userMessage: string) => Promise<void> }).chat(
-      "Use MCP for Tokyo weather",
-    );
+    const engine = new ChatEngine(config, llm, mcp, skills);
+    await engine.chat("Use MCP for Tokyo weather");
 
     expect(llmChatCalls).toBe(2);
     expect(mcpCall).toBeDefined();
