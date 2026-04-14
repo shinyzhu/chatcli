@@ -82,11 +82,22 @@ export default function App({ config, llm, mcp, skillRegistry }: Props) {
 
   return (
     <Box flexDirection="column">
-      <Text bold>chatcli — type /help for commands, /exit to quit</Text>
+      <Box borderStyle="round" borderColor="cyan" paddingX={1}>
+        <Text bold color="cyan">
+          chatcli
+        </Text>
+        <Text dimColor> — type </Text>
+        <Text color="yellow">/help</Text>
+        <Text dimColor> for commands, </Text>
+        <Text color="yellow">/exit</Text>
+        <Text dimColor> to quit</Text>
+      </Box>
       <Text> </Text>
       <MessageList messages={history} />
       {statusMessage ? (
-        <Text dimColor>{statusMessage}</Text>
+        <Text color="yellow" dimColor>
+          ⧗ {statusMessage}
+        </Text>
       ) : null}
       <InputPrompt
         value={input}

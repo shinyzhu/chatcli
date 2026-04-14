@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import TextInput from "ink-text-input";
+import Spinner from "ink-spinner";
 
 interface Props {
   value: string;
@@ -11,8 +12,8 @@ interface Props {
 
 /**
  * Input prompt component using ink-text-input.
- * Shows a "you> " prefix and the text input field.
- * Disables input when isLoading is true.
+ * Shows a "◆ you " prefix and the text input field.
+ * Displays an animated spinner when isLoading is true.
  */
 export default function InputPrompt({
   value,
@@ -23,7 +24,10 @@ export default function InputPrompt({
   if (isLoading) {
     return (
       <Box>
-        <Text dimColor>assistant is thinking…</Text>
+        <Text color="cyan">
+          <Spinner type="dots" />
+        </Text>
+        <Text dimColor> assistant is thinking…</Text>
       </Box>
     );
   }
@@ -31,7 +35,7 @@ export default function InputPrompt({
   return (
     <Box>
       <Text bold color="green">
-        you{">"}{" "}
+        ◆ you{" "}
       </Text>
       <TextInput value={value} onChange={onChange} onSubmit={onSubmit} />
     </Box>
